@@ -1,0 +1,82 @@
+name: Self-build Android APK
+
+# Personal self-signed Android build of the patched Spotube fork.
+# No upstream release secrets (DOTENV/KEYSTORE) needed — we synthesize a
+# throwaway .env and a self-signed keystore in-runner, so anyone can build
+# from a plain fork and sideload the resulting APK.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - monochrome-android-features
+
+env:
+  FLUTTER_VERSION: 3.35.2
+  FLUTTER_CHANNEL: stable
+
+jobs:
+  build-android:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2.18.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          cache: true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: "zulu"
+          java-version: "17"
+          cache: "gradle"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Synthesize .env
+        run: |
+          cat > .env <<'EOF'
+          ENABLE_UPDATE_CHECK=0
+          LASTFM_API_KEY=00000000000000000000000000000000
+          LASTFM_API_SECRET=00000000000000000000000000000000
+          RELEASE_CHANNEL=nightly
+          HIDE_DONATIONS=0
+          EOF
+
+      - name: Generate self-signed keystore
+        run: |
+          keytool -genkey -v \
+            -keystore android/app/upload-keystore.jks \
+            -storepass spotube -keypass spotube \
+            -alias upload -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Spotube Self Build, OU=Personal, O=Personal, L=NA, S=NA, C=NA"
+          cat > android/key.properties <<'EOF'
+          storePassword=spotube
+          keyPassword=spotube
+          keyAlias=upload
+          storeFile=upload-keystore.jks
+          EOF
+
+      - name: Install Flutter deps + codegen
+        run: |
+          flutter pub get
+          dart run build_runner build --delete-conflicting-outputs
+
+      - name: Build APK (nightly flavor, release, self-signed)
+        run: flutter build apk --flavor nightly --release
+
+      - name: Rename artifact
+        run: |
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-nightly-release.apk \
+             dist/Spotube-monochrome-android.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Spotube-monochrome-android-apk
+          path: dist/Spotube-monochrome-android.apk
+          if-no-files-found: error

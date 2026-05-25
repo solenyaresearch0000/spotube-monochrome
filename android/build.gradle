@@ -1,0 +1,27 @@
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+        maven { url 'https://jitpack.io' }
+    }
+    // flutter_new_pipe_extractor pins NewPipeExtractor to a loose commit
+    // (e4e5ccc1...) that jitpack builds but publishes with zero modules, so it
+    // 404s at resolve time. Force the nearest properly-published release tag.
+    configurations.all {
+        resolutionStrategy {
+            force 'com.github.teamnewpipe:NewPipeExtractor:v0.24.3'
+        }
+    }
+}
+
+rootProject.buildDir = '../build'
+subprojects {
+    project.buildDir = "${rootProject.buildDir}/${project.name}"
+}
+subprojects {
+    project.evaluationDependsOn(':app')
+}
+
+tasks.register("clean", Delete) {
+    delete rootProject.buildDir
+}
